@@ -1855,31 +1855,24 @@ app.get('/api/live-sessions-count', async (req, res) => {
     res.setHeader('Expires', '0');
 
     const result = await pool.query(`
-      SELECT booking_invitee_time
+      SELECT booking_start_at, booking_end_at
       FROM bookings
-      WHERE booking_status NOT IN ('cancelled', 'canceled', 'no_show')
+      WHERE booking_status NOT IN ('cancelled', 'canceled', 'no_show', 'completed')
         AND therapist_id IS NOT NULL
         AND booking_resource_name NOT ILIKE '%free consultation%'
+        AND booking_start_at IS NOT NULL
     `);
 
     let liveCount = 0;
+    const nowUTC = new Date();
 
     result.rows.forEach(row => {
-      const timeMatch = row.booking_invitee_time.match(/at\s+(\d+:\d+\s+[AP]M)\s+-\s+(\d+:\d+\s+[AP]M)/);
+      if (row.booking_start_at && row.booking_end_at) {
+        const startTime = new Date(row.booking_start_at);
+        const endTime = new Date(row.booking_end_at);
 
-      if (timeMatch) {
-        const dateStr = row.booking_invitee_time.match(/(\w+,\s+\w+\s+\d+,\s+\d+)/)?.[1];
-        const startTimeStr = timeMatch[1];
-        const endTimeStr = timeMatch[2];
-
-        if (dateStr) {
-          const startIST = new Date(`${dateStr} ${startTimeStr} GMT+0530`);
-          const endIST = new Date(`${dateStr} ${endTimeStr} GMT+0530`);
-          const nowUTC = new Date();
-
-          if (nowUTC >= startIST && nowUTC <= endIST) {
-            liveCount++;
-          }
+        if (nowUTC >= startTime && nowUTC <= endTime) {
+          liveCount++;
         }
       }
     });
@@ -1887,7 +1880,9 @@ app.get('/api/live-sessions-count', async (req, res) => {
     res.json({ liveCount });
   } catch (error) {
     console.error('Error fetching live sessions count:', error);
-    res.status(500).json({ error: 'Failed to fetch live sessions count' });
+    res.status(500).json({ error: 'Failed to fetch live sessions count', liveCount: 0 });
+  }
+});
   }
 });
 
