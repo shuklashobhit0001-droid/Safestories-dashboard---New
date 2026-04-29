@@ -5,7 +5,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import pool from './services/database.service.js';
 import { convertToIST } from './utils/timezone.js';
-import { startDashboardApiBookingSync } // from './dashboardApiBookingSync' // TODO: Migrate this file;
+// import { startDashboardApiBookingSync } from './dashboardApiBookingSync'; // TODO: Migrate this file
 import { uploadFile } from './services/minio.service.js';
 import { sendOTPEmail, sendPasswordResetOTP } from './services/email.service.js';
 
