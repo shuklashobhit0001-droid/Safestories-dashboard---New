@@ -24,8 +24,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": false,
-    "exactOptionalPropertyTypes": false,
-    "types": ["node"]
+    "exactOptionalPropertyTypes": false
   },
   "include": [
     "src/**/*"
