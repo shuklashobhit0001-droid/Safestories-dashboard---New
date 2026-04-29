@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import Lottie from 'lottie-react';
-import sessionBookedAnimation from '../session-booked.json';
+import sessionBookedAnimation from '../../public/session-booked.json';
 
 interface NewTherapistProps {
   onBack: () => void;

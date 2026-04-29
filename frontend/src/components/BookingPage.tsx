@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Lottie from 'lottie-react';
-import sessionBookedAnimation from '../session-booked.json';
+import sessionBookedAnimation from '../../public/session-booked.json';
 import {
   ChevronLeft, ChevronRight, Globe, Clock, Check,
   CalendarCheck, User, Mail, MessageSquare, Video, MapPin, CreditCard,

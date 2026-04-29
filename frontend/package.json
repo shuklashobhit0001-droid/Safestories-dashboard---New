@@ -11,22 +11,23 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-big-calendar": "^1.19.4",
-    "lucide-react": "^0.555.0",
     "lottie-react": "^2.4.1",
-    "moment": "^2.30.1"
+    "lucide-react": "^0.555.0",
+    "moment": "^2.30.1",
+    "react": "^19.2.0",
+    "react-big-calendar": "^1.19.4",
+    "react-dom": "^19.2.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^6.2.0",
-    "typescript": "~5.8.2",
-    "eslint": "^8.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0"
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -6108,7 +6108,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-const PORT = 3002;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`\n✓ API server running on http://localhost:${PORT}`);
   // startDashboardApiBookingSync(); // TODO: Migrate this functionality

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Lottie from 'lottie-react';
-import sessionBookedAnimation from '../session-booked.json';
-import paymentSentAnimation from '../payment-sent.json';
+import sessionBookedAnimation from '../../public/session-booked.json';
+import paymentSentAnimation from '../../public/payment-sent.json';
 
 interface CreateBookingProps {
   onBack: () => void;
