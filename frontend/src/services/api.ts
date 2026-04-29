@@ -6,9 +6,20 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ||
 
 console.log('🔗 API Base URL:', API_BASE_URL);
 
+// Helper function to build full API URL
+export function getApiUrl(endpoint: string): string {
+  // If endpoint already has http/https, return as is
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+  // Remove leading slash if present
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+  return `${API_BASE_URL}/${cleanEndpoint}`;
+}
+
 // API Helper function
 async function apiRequest(endpoint: string, options: RequestInit = {}) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = getApiUrl(endpoint);
   
   const config: RequestInit = {
     headers: {
