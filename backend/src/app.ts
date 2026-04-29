@@ -6111,7 +6111,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const PORT = 3002;
 app.listen(PORT, () => {
   console.log(`\n✓ API server running on http://localhost:${PORT}`);
-  startDashboardApiBookingSync();
+  // startDashboardApiBookingSync(); // TODO: Migrate this functionality
 }).on('error', (err: any) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n✗ Port ${PORT} is already in use. Please stop other processes or change the port.`);
