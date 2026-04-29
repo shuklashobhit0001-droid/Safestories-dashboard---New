@@ -1,0 +1,22 @@
+{
+  "rewrites": [
+    { "source": "/api/sos-documentation", "destination": "/api/sos-documentation" },
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/sos-view/:token", "destination": "/index.html" },
+    { "source": "/((?!api).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "VITE_VERCEL": "1"
+  }
+}

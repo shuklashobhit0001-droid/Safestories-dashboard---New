@@ -1,0 +1,333 @@
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import { randomUUID } from 'crypto';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+// Import services
+import pool from './services/database.service.js';
+import { uploadFile } from './services/minio.service.js';
+import { sendOTPEmail, sendPasswordResetOTP } from './services/email.service.js';
+import { convertToIST, getCurrentISTTimestamp } from './utils/timezone.js';
+
+// Load environment variables
+dotenv.config();
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit (reasonable for profile pictures)
+  }
+});
+
+// Constants
+const REMARK_COLUMN_MAP: Record<string, string> = {
+  'lead-inquire': 'remark_lead_inquire',
+  'followup-1': 'remark_followup_1',
+  'pretherapy-call': 'remark_pretherapy_call',
+  'booked-first-session': 'remark_booked_first_session',
+  'dropouts': 'remark_unresponsive',
+  'leaks': 'remark_leaks',
+  'referred': 'remark_referred',
+  'closed': 'remark_closed',
+};
+
+const TIMESTAMP_COLUMN_MAP: Record<string, string> = {
+  'lead-inquire': 'stage_lead_inquire_at',
+  'followup-1': 'stage_followup_1_at',
+  'followup-2': 'stage_followup_2_at',
+  'followup-3': 'stage_followup_3_at',
+  'pretherapy-call': 'stage_pretherapy_call_at',
+  'booked-first-session': 'stage_booked_first_session_at',
+  'dropouts': 'stage_dropouts_at',
+  'leaks': 'stage_leaks_at',
+  'referred': 'stage_referred_at',
+  'closed': 'stage_closed_at',
+};
+
+// Helper functions
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Create Express app
+const app = express();
+
+// Middleware
+app.use(cors({
+  origin: [
+    'http://localhost:5173', // Vite dev server
+    'http://localhost:3000', // React dev server
+    process.env.FRONTEND_URL || 'https://safestories-app.onrender.com'
+  ],
+  credentials: true
+}));
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// ==================== AUTH ENDPOINTS ====================
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password, portal } = req.body;
+
+    const result = await pool.query(
+      'SELECT * FROM users WHERE LOWER(username) = LOWER($1) AND password = $2',
+      [username, password]
+    );
+
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+
+      // Portal-based role guard
+      if (portal === 'crm' && user.role !== 'sales') {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+      if (portal !== 'crm' && user.role === 'sales') {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+
+      // For therapists, check their approval status and fetch schedule_id
+      if (user.role === 'therapist' && user.therapist_id) {
+        try {
+          // Check therapist status in therapists table
+          const therapistCheck = await pool.query(
+            'SELECT status FROM therapists WHERE therapist_id = $1',
+            [user.therapist_id]
+          );
+          
+          if (therapistCheck.rows.length > 0) {
+            const status = therapistCheck.rows[0].status;
+            user.profileStatus = status; // 'pending_review' or 'approved'
+            user.needsProfileCompletion = false;
+            console.log(`✅ Therapist ${user.therapist_id} status: ${status}`);
+          } else {
+            // Fallback: check therapist_details table
+            const detailsCheck = await pool.query(
+              'SELECT status FROM therapist_details WHERE LOWER(email) = LOWER($1) ORDER BY created_at DESC LIMIT 1',
+              [user.email]
+            );
+            
+            if (detailsCheck.rows.length > 0) {
+              user.profileStatus = detailsCheck.rows[0].status;
+              user.needsProfileCompletion = false;
+            }
+          }
+
+          // Fetch schedule_id from therapist_resources
+          const resourceCheck = await pool.query(
+            'SELECT MAX(schedule_id) as schedule_id FROM therapist_resources WHERE therapist_id = $1',
+            [user.therapist_id]
+          );
+          if (resourceCheck.rows.length > 0) {
+            user.scheduleId = resourceCheck.rows[0].schedule_id;
+            console.log(`✅ Found scheduleId for therapist: ${user.scheduleId}`);
+          }
+        } catch (statusError) {
+          console.error('Error checking therapist status/resources:', statusError);
+        }
+      }
+      
+      // Log therapist login
+      if (user.role === 'therapist') {
+        try {
+          await pool.query(
+            `INSERT INTO audit_logs (therapist_id, therapist_name, action_type, action_description, timestamp, is_visible)
+             VALUES ($1, $2, $3, $4, $5, true)`,
+            [user.therapist_id, username, 'login', `${username} logged into dashboard`, getCurrentISTTimestamp()]
+          );
+        } catch (auditError) {
+          console.error('❌ Failed to create audit log for login:', auditError);
+        }
+      }
+      
+      res.json({ success: true, user });
+    } else {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Login failed' });
+  }
+});
+
+// Verify password endpoint (for case history access)
+app.post('/api/verify-password', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const result = await pool.query(
+      'SELECT * FROM users WHERE LOWER(username) = LOWER($1) AND password = $2',
+      [username, password]
+    );
+
+    if (result.rows.length > 0) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false });
+    }
+  } catch (error) {
+    console.error('Password verification error:', error);
+    res.status(500).json({ success: false, message: 'Verification failed' });
+  }
+});
+
+// Change password endpoint
+app.post('/api/change-password', async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    if (!userId || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+    }
+
+    const result = await pool.query(
+      'UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2 RETURNING id, username',
+      [newPassword, userId]
+    );
+
+    if (result.rows.length > 0) {
+      res.json({ success: true, message: 'Password changed successfully' });
+    } else {
+      res.status(404).json({ success: false, error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ success: false, error: 'Failed to change password' });
+  }
+});
+
+// Update password
+app.post('/api/update-password', async (req, res) => {
+  try {
+    const { user_id, new_password } = req.body;
+
+    if (!user_id || !new_password) {
+      return res.status(400).json({ success: false, error: 'User ID and new password are required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE users SET password = $1 WHERE id = $2 RETURNING id`,
+      [new_password, user_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ success: false, error: 'Failed to update password' });
+  }
+});
+
+// ==================== FORGOT PASSWORD ENDPOINTS ====================
+
+// Send OTP for password reset
+app.post('/api/forgot-password/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+
+    // Validate email
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+
+    // Check if user exists
+    const userResult = await pool.query(
+      `SELECT id, username, full_name, email FROM users WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    );
+
+    // For testing: Allow OTP for any email (even if not in database)
+    const user = userResult.rows.length > 0
+      ? userResult.rows[0]
+      : { id: null, username: 'User', full_name: 'User', email: email };
+
+    // Check rate limiting (max 3 requests per hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const attemptsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM password_reset_attempts 
+       WHERE LOWER(email) = LOWER($1) AND attempted_at > $2`,
+      [email, oneHourAgo]
+    );
+
+    const attemptCount = parseInt(attemptsResult.rows[0].count);
+    if (attemptCount >= 3) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many requests. Please try again in an hour.'
+      });
+    }
+
+    // Generate OTP and token
+    const otp = generateOTP();
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store in database
+    await pool.query(
+      `INSERT INTO password_reset_tokens 
+       (user_id, email, otp, token, expires_at, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [user.id, email, otp, token, expiresAt, ipAddress, req.headers['user-agent']]
+    );
+
+    // Log attempt
+    await pool.query(
+      `INSERT INTO password_reset_attempts (email, ip_address, success)
+       VALUES ($1, $2, true)`,
+      [email, ipAddress]
+    );
+
+    // Send email
+    try {
+      await sendPasswordResetOTP(email, user.full_name || user.username, otp, expiresAt);
+      console.log(`✅ Password reset OTP sent to: ${email}`);
+    } catch (emailError) {
+      console.error('❌ Failed to send password reset email:', emailError);
+      // Continue anyway - OTP is saved in database
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP sent successfully',
+      token: token // Return token for verification step
+    });
+  } catch (error) {
+    console.error('❌ Error sending password reset OTP:', error);
+    res.status(500).json({ success: false, error: 'Failed to send OTP' });
+  }
+});
+
+// Start the server
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 SafeStories Backend Server running on port ${PORT}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+});
+
+export default app;
