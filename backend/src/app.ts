@@ -56,7 +56,20 @@ const TIMESTAMP_COLUMN_MAP: Record<string, string> = {
 };
 
 const app = express();
-app.use(cors());
+
+// CORS configuration - allow requests from frontend
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://safestories-dashboard-new.vercel.app',
+    process.env.FRONTEND_URL
+  ].filter(Boolean),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Login endpoint
